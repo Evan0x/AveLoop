@@ -1,69 +1,213 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
+import { Button } from "@/components/ui/button";
+import { AppHeader } from "@/components/AppHeader";
+import { Loader2, FileText, Sparkles, Camera, X } from "lucide-react";
+import type { CareData } from "@/lib/types";
+import { SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
+import { replaceLocalPlanId, saveLocalPlan } from "@/lib/local-plans";
+
+const SAMPLE_NOTE = `DISCHARGE SUMMARY
+Patient: Alex Chen    Discharged: October 17, 2026
+Diagnosis: Acute sinusitis, mild dehydration
+
+Medications:
+- Amoxicillin 500 mg, take 1 capsule 3 times a day with food for 10 days.
+- Ibuprofen 400 mg every 6–8 hours as needed for pain. Max 3 doses/day.
+- Nasal saline rinse morning and night until symptoms resolve.
+
+Follow-up:
+- Recheck with Dr. Rivera at Riverside Family Clinic in about 2 weeks.
+- Blood work (basic panel) sometime next week, fasting required.
+
+Instructions:
+- Drink at least 2 L of fluids daily. Rest for 3 days.
+- Return to the ER or call the clinic if: fever above 101.5°F, severe headache or stiff neck, swelling around the eyes, or symptoms worsen after 5 days on antibiotics.
+- Prescriptions sent to Pharmacy on Main St. Pick up today or tomorrow.`;
+
+export default function UploadPage() {
+  const router = useRouter();
+  const { isSignedIn } = useAuth();
+  const [notes, setNotes] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleExtract() {
+    if (!isSignedIn) {
+      router.push("/sign-in");
+      return;
+    }
+    if (!notes.trim() && !file) {
+      setError("Paste notes or upload a discharge photo/PDF.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+
+    try {
+      let res: Response;
+      if (file) {
+        const form = new FormData();
+        form.append("notes", notes);
+        form.append("file", file);
+        res = await fetch("/api/extract", { method: "POST", body: form });
+      } else {
+        res = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes }),
+        });
+      }
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong. Please try again.");
+        return;
+      }
+
+      const careData: CareData = data;
+      sessionStorage.setItem(SESSION_CARE_DATA, JSON.stringify(careData));
+
+      const localId = crypto.randomUUID();
+      sessionStorage.setItem(SESSION_PLAN_ID, localId);
+      saveLocalPlan({
+        id: localId,
+        status: "extracted",
+        created_at: new Date().toISOString(),
+        notes,
+        data: careData,
+      });
+
+      try {
+        const saveRes = await fetch("/api/care-plans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes, data: careData }),
+        });
+        const saved = await saveRes.json();
+        if (saved.id) {
+          replaceLocalPlanId(localId, saved.id);
+          sessionStorage.setItem(SESSION_PLAN_ID, saved.id);
+        }
+      } catch {
+        // Keep the in-session flow even if Supabase is not configured yet.
+      }
+
+      router.push("/review");
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex flex-col">
+      <AppHeader />
+
+      {/* Hero */}
+      <div className="px-4 pt-6 pb-4 max-w-xl mx-auto w-full">
+        <h1 className="text-2xl font-bold text-gray-900 leading-tight">
+          Turn discharge notes into
+          <span className="text-[#10B981]"> a care plan</span>
+        </h1>
+        <p className="mt-2 text-gray-500 text-sm">
+          Paste notes or snap a photo of the discharge sheet. We&apos;ll extract medications, follow-ups, and next steps—then Fo helps get them done.
+        </p>
+      </div>
+
+      {/* Main card */}
+      <div className="flex-1 px-4 max-w-xl mx-auto w-full">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <FileText className="w-4 h-4 text-gray-400" />
+            <span className="text-sm font-medium text-gray-600">Discharge notes</span>
+          </div>
+
+          <textarea
+            className="w-full h-48 text-sm text-gray-700 placeholder-gray-300 resize-none focus:outline-none leading-relaxed"
+            placeholder="Paste your discharge summary here…&#10;&#10;Include medications, follow-up appointments, and any instructions from your doctor."
+            value={notes}
+            onChange={(e) => {
+              setNotes(e.target.value);
+              if (error) setError("");
+            }}
+          />
+
+          <div className="mt-3 flex items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 rounded-xl px-3 py-2 cursor-pointer hover:bg-gray-50">
+              <Camera className="w-4 h-4" />
+              Photo or PDF
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const next = e.target.files?.[0] ?? null;
+                  setFile(next);
+                  if (error) setError("");
+                }}
+              />
+            </label>
+            {file && (
+              <span className="text-xs text-gray-500 flex items-center gap-1 min-w-0">
+                <span className="truncate max-w-[160px]">{file.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setFile(null)}
+                  className="text-gray-400 hover:text-gray-700"
+                  aria-label="Remove file"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </span>
+            )}
+          </div>
+
+          {error && (
+            <p className="mt-2 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+          )}
+
+          <div className="mt-4 flex flex-col gap-2">
+            <Button
+              onClick={handleExtract}
+              disabled={loading}
+              className="w-full bg-[#10B981] hover:bg-[#059669] text-white h-11 rounded-xl font-semibold text-sm"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Extracting your care plan…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Extract my care plan
+                </>
+              )}
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => setNotes(SAMPLE_NOTE)}
+              disabled={loading}
+              className="w-full h-9 rounded-xl text-sm text-gray-600 border-gray-200"
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              Use sample notes
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+
+        <p className="text-center text-xs text-gray-400 mt-4 pb-8">
+          Signed-in plans are saved to your account so you can reopen them later.
+        </p>
+      </div>
+    </main>
   );
 }
