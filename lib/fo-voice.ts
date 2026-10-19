@@ -121,7 +121,8 @@ export function stopSpeaking() {
 function playCloudAudio(bytes: ArrayBuffer, mime: string, token: number): Promise<boolean> {
   const el = audioPlayer();
   if (playerUrl) URL.revokeObjectURL(playerUrl);
-  playerUrl = URL.createObjectURL(new Blob([bytes], { type: mime || "audio/wav" }));
+  const nextUrl = URL.createObjectURL(new Blob([bytes], { type: mime || "audio/wav" }));
+  playerUrl = nextUrl;
   return new Promise((resolve) => {
     let settled = false;
     let started = false;
@@ -136,7 +137,7 @@ function playCloudAudio(bytes: ArrayBuffer, mime: string, token: number): Promis
     el.onerror = () => {
       if (started) finish(false);
     };
-    el.src = playerUrl;
+    el.src = nextUrl;
     el.play()
       .then(() => {
         started = true;
