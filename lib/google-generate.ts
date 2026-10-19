@@ -132,6 +132,7 @@ export async function generateGoogleText(options: {
       }
       failure = failureMessage(response.status, body, raw);
       if (keyRejected(failure)) {
+        failure = "Google blocked this API key. In Google Cloud, edit the key and set API restrictions to Unrestricted, then redeploy.";
         tryNextKey = true;
         break;
       }
