@@ -4,7 +4,7 @@ import { googleApiKeys } from "@/lib/google-generate";
 
 export const maxDuration = 30;
 
-const CLOUD_VOICES = ["en-US-Neural2-F", "en-US-Wavenet-F"];
+const CLOUD_VOICES = ["en-US-Neural2-H", "en-US-Neural2-C"];
 
 type CloudBody = {
   audioContent?: string;
@@ -44,7 +44,7 @@ async function synthesizeCloud(key: string, text: string, voice: string) {
     body: JSON.stringify({
       input: { text },
       voice: { languageCode: "en-US", name: voice },
-      audioConfig: { audioEncoding: "MP3" },
+      audioConfig: { audioEncoding: "MP3", speakingRate: 0.92, pitch: -1.5 },
     }),
   });
   const raw = await response.text();
