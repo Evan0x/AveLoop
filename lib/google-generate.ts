@@ -2,12 +2,22 @@ function cleanKey(value: string | undefined) {
   return (value ?? "").trim().replace(/^['"]|['"]$/g, "");
 }
 
+const KEY_NAMES = ["GOOGLE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_TTS_API_KEY"];
+
+export function googleApiKeys() {
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const name of KEY_NAMES) {
+    const key = cleanKey(process.env[name]);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
 export function googleApiKey() {
-  return (
-    cleanKey(process.env.GOOGLE_API_KEY) ||
-    cleanKey(process.env.GEMINI_API_KEY) ||
-    cleanKey(process.env.GOOGLE_TTS_API_KEY)
-  );
+  return googleApiKeys()[0] ?? "";
 }
 
 function thinkingLevelFor(model: string) {
@@ -55,7 +65,12 @@ function textFrom(body: InteractionBody) {
   return chunks.join("").trim();
 }
 
+function keyRejected(message: string) {
+  return /are blocked|api key not valid|permission denied/i.test(message);
+}
+
 async function requestInteraction(
+  key: string,
   model: string,
   options: {
     system: string;
@@ -68,7 +83,7 @@ async function requestInteraction(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-goog-api-key": googleApiKey(),
+      "x-goog-api-key": key,
     },
     body: JSON.stringify({
       model,
@@ -94,25 +109,35 @@ export async function generateGoogleText(options: {
 }): Promise<string> {
   const preferred = process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
   const models = process.env.GEMINI_MODEL ? [preferred] : [preferred, "gemini-3.8-flash"];
-  let failure = "Google request failed.";
+  const keys = googleApiKeys();
+  let failure = keys.length ? "Google request failed." : "Google API key is not configured.";
 
-  for (const model of models) {
-    const response = await requestInteraction(model, options);
-    const raw = await response.text();
-    let body: unknown = null;
-    try {
-      body = raw ? JSON.parse(raw) : null;
-    } catch {
-      body = null;
+  for (const key of keys) {
+    let tryNextKey = false;
+    for (const model of models) {
+      const response = await requestInteraction(key, model, options);
+      const raw = await response.text();
+      let body: unknown = null;
+      try {
+        body = raw ? JSON.parse(raw) : null;
+      } catch {
+        body = null;
+      }
+      if (response.ok) {
+        const text = body && !Array.isArray(body) ? textFrom(body as InteractionBody) : "";
+        if (text) return text;
+        failure = "Google returned an empty reply.";
+        tryNextKey = false;
+        break;
+      }
+      failure = failureMessage(response.status, body, raw);
+      if (keyRejected(failure)) {
+        tryNextKey = true;
+        break;
+      }
+      if (response.status !== 404 || process.env.GEMINI_MODEL) break;
     }
-    if (response.ok) {
-      const text = body && !Array.isArray(body) ? textFrom(body as InteractionBody) : "";
-      if (text) return text;
-      failure = "Google returned an empty reply.";
-      break;
-    }
-    failure = failureMessage(response.status, body, raw);
-    if (response.status !== 404 || process.env.GEMINI_MODEL) break;
+    if (!tryNextKey) break;
   }
 
   throw new Error(failure);

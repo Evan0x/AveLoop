@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth";
+import { googleApiKeys } from "@/lib/google-generate";
 
 export const maxDuration = 30;
 
@@ -25,10 +26,8 @@ export async function POST(req: NextRequest) {
   const { error } = await requireUserId();
   if (error) return error;
 
-  const key = [process.env.GOOGLE_TTS_API_KEY, process.env.GOOGLE_API_KEY, process.env.GEMINI_API_KEY]
-    .map((value) => (value ?? "").trim().replace(/^['"]|['"]$/g, ""))
-    .find(Boolean);
-  if (!key) {
+  const keys = googleApiKeys();
+  if (!keys.length) {
     return NextResponse.json({ error: "Text-to-speech is not configured." }, { status: 503 });
   }
 
@@ -39,51 +38,66 @@ export async function POST(req: NextRequest) {
   }
 
   let failure = "Could not synthesize speech.";
-  for (const model of MODELS) {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": key,
-      },
-      body: JSON.stringify({
-        model,
-        input: [
-          {
-            type: "user_input",
-            content: [
-              {
-                type: "text",
-                text,
-                annotations: [{ type: "speech_metadata", style: "calm and clear" }],
-              },
-            ],
-          },
-        ],
-        response_format: { type: "audio" },
-        generation_config: {
-          speech_config: [{ voice: "Aoede" }],
+  for (const key of keys) {
+    let tryNextKey = false;
+    for (const model of MODELS) {
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": key,
         },
-      }),
-    });
+        body: JSON.stringify({
+          model,
+          input: [
+            {
+              type: "user_input",
+              content: [
+                {
+                  type: "text",
+                  text,
+                  annotations: [{ type: "speech_metadata", style: "calm and clear" }],
+                },
+              ],
+            },
+          ],
+          response_format: { type: "audio" },
+          generation_config: {
+            speech_config: [{ voice: "Aoede" }],
+          },
+        }),
+      });
 
-    const data = (await response.json().catch(() => null)) as SpeechBody | null;
-    const audio = data ? audioPart(data) : null;
-    if (!response.ok || !audio?.data) {
-      if (data?.error?.message) failure = data.error.message.slice(0, 180);
-      if (response.status !== 404) break;
-      continue;
+      const raw = await response.text();
+      let data: SpeechBody | null = null;
+      try {
+        const parsed = raw ? JSON.parse(raw) : null;
+        data = Array.isArray(parsed) ? parsed[0] : parsed;
+      } catch {
+        data = null;
+      }
+      const audio = data ? audioPart(data) : null;
+      if (!response.ok || !audio?.data) {
+        if (data?.error?.message) failure = data.error.message.slice(0, 180);
+        if (/are blocked|api key not valid|permission denied/i.test(failure)) {
+          tryNextKey = true;
+          break;
+        }
+        if (response.status !== 404) break;
+        continue;
+      }
+
+      const bytes = Buffer.from(audio.data, "base64");
+      const mime = audio.mime_type?.startsWith("audio/") ? audio.mime_type : "audio/wav";
+      return new NextResponse(new Uint8Array(bytes), {
+        headers: {
+          "Content-Type": mime,
+          "Content-Length": String(bytes.length),
+          "Cache-Control": "no-store",
+        },
+      });
     }
-
-    const bytes = Buffer.from(audio.data, "base64");
-    const mime = audio.mime_type?.startsWith("audio/") ? audio.mime_type : "audio/wav";
-    return new NextResponse(new Uint8Array(bytes), {
-      headers: {
-        "Content-Type": mime,
-        "Content-Length": String(bytes.length),
-        "Cache-Control": "no-store",
-      },
-    });
+    if (!tryNextKey) break;
   }
 
   return NextResponse.json({ error: failure }, { status: 502 });
