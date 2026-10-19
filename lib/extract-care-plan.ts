@@ -7,6 +7,7 @@ import { tmpdir } from "os";
 import path from "path";
 import type { Action, CareData } from "@/lib/types";
 import { enrichCarePlan } from "@/lib/enrich-care-plan";
+import { generateGoogleText, googleApiKey, type GoogleContentPart } from "@/lib/google-generate";
 
 const execFileAsync = promisify(execFile);
 
@@ -137,10 +138,6 @@ function userText(notes: string, hasFile: boolean) {
   return "";
 }
 
-function googleApiKey() {
-  return process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_TTS_API_KEY || "";
-}
-
 const GEMINI_SCHEMA = {
   type: "object",
   required: ["medications", "followups", "warnings", "care_instructions", "actions", "needs_clarification"],
@@ -192,71 +189,24 @@ const GEMINI_SCHEMA = {
   },
 };
 
-function geminiModel() {
-  return process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
-}
-
-function thinkingLevelFor(model: string) {
-  return /3\.8|3\.1-pro|4-argon/.test(model) ? "LOW" : "MINIMAL";
-}
-
-async function requestGemini(model: string, parts: Array<Record<string, unknown>>) {
-  return fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": googleApiKey(),
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: GEMINI_SCHEMA,
-          maxOutputTokens: 2500,
-          thinkingConfig: {
-            thinkingLevel: thinkingLevelFor(model),
-            includeThoughts: false,
-          },
-        },
-      }),
-    }
-  );
-}
-
 async function extractWithGoogle(notes: string, attachment?: ExtractAttachment): Promise<CareData> {
-  const parts: Array<Record<string, unknown>> = [];
+  const parts: GoogleContentPart[] = [];
   if (attachment) {
+    const mime = attachment.type || "application/octet-stream";
     parts.push({
-      inlineData: {
-        mimeType: attachment.type || "application/octet-stream",
-        data: attachment.buffer.toString("base64"),
-      },
+      type: mime.startsWith("image/") ? "image" : "document",
+      data: attachment.buffer.toString("base64"),
+      mime_type: mime,
     });
   }
-  parts.push({ text: userText(notes, Boolean(attachment)) });
+  parts.push({ type: "text", text: userText(notes, Boolean(attachment)) });
 
-  const preferred = geminiModel();
-  let response = await requestGemini(preferred, parts);
-  if (response.status === 404 && !process.env.GEMINI_MODEL && preferred !== "gemini-3.8-flash") {
-    response = await requestGemini("gemini-3.8-flash", parts);
-  }
-
-  const body = (await response.json()) as {
-    error?: { message?: string };
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
-  };
-  if (!response.ok) {
-    throw new Error(body.error?.message || "Google extraction failed.");
-  }
-  const text =
-    body.candidates?.[0]?.content?.parts
-      ?.filter((part) => !part.thought)
-      .map((part) => part.text ?? "")
-      .join("") ?? "";
-  if (!text.trim()) throw new Error("Google returned an empty care plan.");
+  const text = await generateGoogleText({
+    system: SYSTEM_PROMPT,
+    parts,
+    schema: GEMINI_SCHEMA,
+    maxOutputTokens: 2500,
+  });
   return normalizeCareData(JSON.parse(text));
 }
 
