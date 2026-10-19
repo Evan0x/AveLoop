@@ -137,6 +137,129 @@ function userText(notes: string, hasFile: boolean) {
   return "";
 }
 
+function googleApiKey() {
+  return process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_TTS_API_KEY || "";
+}
+
+const GEMINI_SCHEMA = {
+  type: "object",
+  required: ["medications", "followups", "warnings", "care_instructions", "actions", "needs_clarification"],
+  properties: {
+    medications: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["name", "dose", "schedule", "duration_days"],
+        properties: {
+          name: { type: "string" },
+          dose: { type: "string" },
+          schedule: { type: "string" },
+          duration_days: { type: "integer", nullable: true },
+        },
+      },
+    },
+    followups: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["reason", "date", "clinic"],
+        properties: {
+          reason: { type: "string" },
+          date: { type: "string" },
+          clinic: { type: "string", nullable: true },
+        },
+      },
+    },
+    warnings: { type: "array", items: { type: "string" } },
+    care_instructions: { type: "array", items: { type: "string" } },
+    actions: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "type", "label", "instruction", "status", "missing", "result"],
+        properties: {
+          id: { type: "string" },
+          type: { type: "string", enum: ["task", "calendar", "email"] },
+          label: { type: "string" },
+          instruction: { type: "string" },
+          status: { type: "string", enum: ["ready", "needs_input"] },
+          missing: { type: "array", items: { type: "string" } },
+          result: { type: "string", nullable: true },
+        },
+      },
+    },
+    needs_clarification: { type: "array", items: { type: "string" } },
+  },
+};
+
+function geminiModel() {
+  return process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
+}
+
+function thinkingLevelFor(model: string) {
+  return /3\.8|3\.1-pro|4-argon/.test(model) ? "LOW" : "MINIMAL";
+}
+
+async function requestGemini(model: string, parts: Array<Record<string, unknown>>) {
+  return fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": googleApiKey(),
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: GEMINI_SCHEMA,
+          maxOutputTokens: 2500,
+          thinkingConfig: {
+            thinkingLevel: thinkingLevelFor(model),
+            includeThoughts: false,
+          },
+        },
+      }),
+    }
+  );
+}
+
+async function extractWithGoogle(notes: string, attachment?: ExtractAttachment): Promise<CareData> {
+  const parts: Array<Record<string, unknown>> = [];
+  if (attachment) {
+    parts.push({
+      inlineData: {
+        mimeType: attachment.type || "application/octet-stream",
+        data: attachment.buffer.toString("base64"),
+      },
+    });
+  }
+  parts.push({ text: userText(notes, Boolean(attachment)) });
+
+  const preferred = geminiModel();
+  let response = await requestGemini(preferred, parts);
+  if (response.status === 404 && !process.env.GEMINI_MODEL && preferred !== "gemini-3.8-flash") {
+    response = await requestGemini("gemini-3.8-flash", parts);
+  }
+
+  const body = (await response.json()) as {
+    error?: { message?: string };
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
+  };
+  if (!response.ok) {
+    throw new Error(body.error?.message || "Google extraction failed.");
+  }
+  const text =
+    body.candidates?.[0]?.content?.parts
+      ?.filter((part) => !part.thought)
+      .map((part) => part.text ?? "")
+      .join("") ?? "";
+  if (!text.trim()) throw new Error("Google returned an empty care plan.");
+  return normalizeCareData(JSON.parse(text));
+}
+
 async function extractWithApi(notes: string, attachment?: ExtractAttachment): Promise<CareData> {
   const client = new Anthropic();
   const content: Anthropic.MessageCreateParams["messages"][number]["content"] = [];
@@ -220,8 +343,9 @@ async function extractWithCli(notes: string, attachment?: ExtractAttachment): Pr
 }
 
 export async function extractCarePlan(notes: string, attachment?: ExtractAttachment): Promise<CareData> {
-  const raw =
-    process.env.ANTHROPIC_API_KEY
+  const raw = googleApiKey()
+    ? await extractWithGoogle(notes, attachment)
+    : process.env.ANTHROPIC_API_KEY
       ? await extractWithApi(notes, attachment)
       : await extractWithCli(notes, attachment);
   return enrichCarePlan(raw);

@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "./StatusBadge";
-import { shouldOfferClinicChoices } from "@/lib/fo-execute";
+import { clinicFromReply, shouldOfferClinicChoices } from "@/lib/fo-execute";
+import {
+  enableVoiceFollowUp,
+  listen,
+  speak,
+  stopListening,
+  stopSpeaking,
+  voiceFollowUpEnabled,
+  voiceInputSupported,
+} from "@/lib/fo-voice";
 import { CLINIC_OPTIONS, type Action } from "@/lib/types";
 import {
   CheckCircle,
@@ -15,6 +24,7 @@ import {
   Calendar,
   Mail,
   ClipboardList,
+  Mic,
 } from "lucide-react";
 
 const TYPE_ICONS = {
@@ -32,7 +42,79 @@ interface TimelineRowProps {
 export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) {
   const [selectedClinic, setSelectedClinic] = useState("");
   const [customReply, setCustomReply] = useState("");
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [canTalk, setCanTalk] = useState(false);
+  const spokenKey = useRef("");
   const Icon = TYPE_ICONS[action.type];
+
+  useEffect(() => {
+    setCanTalk(voiceInputSupported());
+  }, []);
+
+  useEffect(() => {
+    if (!foMessage) return;
+    if (action.status !== "needs_clarification") return;
+    const key = `${action.status}:${foMessage}`;
+    if (spokenKey.current === key) return;
+    spokenKey.current = key;
+    let cancelled = false;
+    speak(foMessage).then((finished) => {
+      if (!finished || cancelled || action.status !== "needs_clarification" || !voiceFollowUpEnabled()) {
+        return;
+      }
+      beginListening(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // beginListening is recreated each render; speech should run only when the reply changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foMessage, action.status]);
+
+  function beginListening(quiet = false) {
+    setVoiceError("");
+    setListening(true);
+    enableVoiceFollowUp();
+    listen({
+      onPartial: (text) => {
+        const clinic = clinicFromReply(text);
+        if (clinic) setSelectedClinic(clinic);
+        else setCustomReply(text);
+      },
+      onFinal: (text) => {
+        setListening(false);
+        if (!text || heardItself(text, foMessage)) return;
+        const askingClinic =
+          action.status === "needs_clarification" &&
+          !action.filledClinic &&
+          shouldOfferClinicChoices(foMessage, action.missing?.includes("clinic") ?? false);
+        const clinic = askingClinic ? clinicFromReply(text) : undefined;
+        if (clinic) {
+          setSelectedClinic(clinic);
+          onClarify(action.id, clinic);
+          return;
+        }
+        setCustomReply(text);
+        onClarify(action.id, text);
+      },
+      onEnd: () => setListening(false),
+      onError: (message) => {
+        setListening(false);
+        setVoiceError(message);
+      },
+    }, { quiet });
+  }
+
+  function toggleListening() {
+    if (listening) {
+      stopListening();
+      setListening(false);
+      return;
+    }
+    stopSpeaking();
+    beginListening();
+  }
 
   const statusIcon = {
     ready: null,
@@ -138,14 +220,19 @@ export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) 
                   );
                 })}
               </RadioGroup>
-              <Button
-                size="sm"
-                disabled={!selectedClinic}
-                onClick={() => onClarify(action.id, selectedClinic)}
-                className="bg-[#10B981] hover:bg-[#059669] text-white"
-              >
-                Confirm selection
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled={!selectedClinic}
+                  onClick={() => onClarify(action.id, selectedClinic)}
+                  className="bg-[#10B981] hover:bg-[#059669] text-white"
+                >
+                  Confirm selection
+                </Button>
+                {canTalk && (
+                  <TalkButton listening={listening} onClick={toggleListening} />
+                )}
+              </div>
             </>
           ) : (
             // Generic clarification — let user type a reply
@@ -157,18 +244,49 @@ export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) 
                 placeholder="Type your answer…"
                 className="w-full text-sm border border-orange-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-orange-300"
               />
-              <Button
-                size="sm"
-                disabled={!customReply.trim()}
-                onClick={() => onClarify(action.id, customReply)}
-                className="bg-[#10B981] hover:bg-[#059669] text-white"
-              >
-                Send reply
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled={!customReply.trim()}
+                  onClick={() => onClarify(action.id, customReply)}
+                  className="bg-[#10B981] hover:bg-[#059669] text-white"
+                >
+                  Send reply
+                </Button>
+                {canTalk && (
+                  <TalkButton listening={listening} onClick={toggleListening} />
+                )}
+              </div>
             </div>
           )}
+          {listening && <p className="text-xs text-orange-700 mt-2">Listening…</p>}
+          {voiceError && <p className="text-xs text-red-600 mt-2">{voiceError}</p>}
         </div>
       )}
     </div>
+  );
+}
+
+function heardItself(heard: string, said?: string) {
+  if (!said) return false;
+  const clean = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  const reply = clean(heard);
+  const prompt = clean(said);
+  if (reply.length < 12) return false;
+  return prompt.includes(reply) || reply.includes(prompt.slice(0, 48));
+}
+
+function TalkButton({ listening, onClick }: { listening: boolean; onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      onClick={onClick}
+      className="border-orange-200 text-orange-800"
+    >
+      {listening ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+      {listening ? "Stop" : "Talk to Fo"}
+    </Button>
   );
 }

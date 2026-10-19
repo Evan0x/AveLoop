@@ -11,7 +11,7 @@ export async function deleteCarePlan(plan: StoredPlan) {
       approved_actions: plan.approved_actions ?? plan.data?.actions ?? [],
     }),
   });
-  const body = (await res.json()) as { error?: string; response?: string };
+  const body = (await res.json()) as { error?: string; response?: string; warning?: string };
   if (!res.ok) {
     throw new Error(body.error ?? "Could not delete this care plan.");
   }
@@ -22,5 +22,5 @@ export async function deleteCarePlan(plan: StoredPlan) {
     sessionStorage.removeItem(SESSION_CARE_DATA);
     sessionStorage.removeItem(SESSION_APPROVED);
   }
-  return body.response ?? "";
+  return body.warning ?? "";
 }

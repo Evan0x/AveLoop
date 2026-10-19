@@ -134,22 +134,17 @@ export async function DELETE(
     status === "executing" ||
     actions.some((action) => action.status === "done" || action.status === "processing");
   const prompt = created ? buildCalendarDeletePrompt(actions) : null;
+  const calendarWarning =
+    "The care plan was deleted. Fo could not remove its calendar events, so check Google Calendar for anything still there.";
 
   let response = "";
+  let warning = "";
   if (prompt) {
     try {
       response = await runFoPrompt(prompt);
+      if (classifyDeleteResponse(response) !== "complete") warning = calendarWarning;
     } catch {
-      return NextResponse.json(
-        { error: "Could not remove the calendar events. The care plan is still saved." },
-        { status: 502 }
-      );
-    }
-    if (classifyDeleteResponse(response) !== "complete") {
-      return NextResponse.json(
-        { error: response || "Could not remove the calendar events. The care plan is still saved." },
-        { status: 502 }
-      );
+      warning = calendarWarning;
     }
   }
 
@@ -161,5 +156,5 @@ export async function DELETE(
     }
   }
 
-  return NextResponse.json({ ok: true, response });
+  return NextResponse.json({ ok: true, response, warning });
 }

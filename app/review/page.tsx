@@ -8,7 +8,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Send } from "lucide-react";
 import { withSuggestedTimes, type Action, type CareData } from "@/lib/types";
 import { SESSION_APPROVED, SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
-import { updateLocalPlan } from "@/lib/local-plans";
+import { savePendingExecution, updateLocalPlan } from "@/lib/local-plans";
 import { SharePlanButton } from "@/components/SharePlanButton";
 import { DeletePlanButton } from "@/components/DeletePlanButton";
 import { SymptomChecker } from "@/components/SymptomChecker";
@@ -57,34 +57,32 @@ export default function ReviewPage() {
   const allFilled = filledCount === actions.length;
 
   async function handleApprove() {
-    if (!careData) return;
+    if (!careData || actions.length === 0) return;
     const approved = actions.map((a) => ({
       ...withSuggestedTimes(a),
       status: "processing" as Action["status"],
     }));
+    const id = sessionStorage.getItem(SESSION_PLAN_ID) ?? planId;
     sessionStorage.setItem(SESSION_APPROVED, JSON.stringify(approved));
-    const planId = sessionStorage.getItem(SESSION_PLAN_ID);
-    if (planId) {
-      updateLocalPlan(planId, {
+    if (id) sessionStorage.setItem(SESSION_PLAN_ID, id);
+    savePendingExecution({ planId: id, careData, actions: approved });
+    if (id) {
+      updateLocalPlan(id, {
         data: { ...careData, actions },
         approved_actions: approved,
         status: "executing",
       });
-      try {
-        await fetch(`/api/care-plans/${planId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            data: { ...careData, actions },
-            approved_actions: approved,
-            status: "executing",
-          }),
-        });
-      } catch {
-        // Continue even if persistence fails.
-      }
+      fetch(`/api/care-plans/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: { ...careData, actions },
+          approved_actions: approved,
+          status: "executing",
+        }),
+      }).catch(() => {});
     }
-    router.push("/execute");
+    window.location.assign("/execute");
   }
 
   if (error) {

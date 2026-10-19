@@ -1,7 +1,8 @@
 import type { Action, CareData } from "@/lib/types";
-import { SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
+import { SESSION_APPROVED, SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
 
 export const LOCAL_PLANS_KEY = "aveloop_care_plans";
+const PENDING_EXECUTION_KEY = "aveloop_pending_execution";
 
 export interface StoredPlan {
   id: string;
@@ -55,6 +56,81 @@ export function replaceLocalPlanId(oldId: string, newId: string) {
   if (idx < 0) return;
   plans[idx] = { ...plans[idx], id: newId };
   persist(plans);
+}
+
+export function savePendingExecution(payload: {
+  planId: string;
+  careData: CareData | null;
+  actions: Action[];
+}) {
+  localStorage.setItem(PENDING_EXECUTION_KEY, JSON.stringify(payload));
+}
+
+export function clearPendingExecution() {
+  localStorage.removeItem(PENDING_EXECUTION_KEY);
+}
+
+function parseActions(raw: string | null): Action[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Action[];
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadExecutionInput(): {
+  planId: string;
+  careData: CareData | null;
+  actions: Action[];
+} | null {
+  if (typeof window === "undefined") return null;
+
+  const planId = sessionStorage.getItem(SESSION_PLAN_ID) ?? "";
+  let careData: CareData | null = null;
+  try {
+    const raw = sessionStorage.getItem(SESSION_CARE_DATA);
+    if (raw) careData = JSON.parse(raw) as CareData;
+  } catch {
+    careData = null;
+  }
+
+  const approved = parseActions(sessionStorage.getItem(SESSION_APPROVED));
+  if (approved) return { planId, careData, actions: approved };
+
+  try {
+    const pendingRaw = localStorage.getItem(PENDING_EXECUTION_KEY);
+    if (pendingRaw) {
+      const pending = JSON.parse(pendingRaw) as {
+        planId?: string;
+        careData?: CareData | null;
+        actions?: Action[];
+      };
+      const samePlan = !planId || !pending.planId || pending.planId === planId;
+      if (samePlan && pending.actions?.length) {
+        return {
+          planId: pending.planId || planId,
+          careData: pending.careData ?? careData,
+          actions: pending.actions,
+        };
+      }
+    }
+  } catch {
+    // The saved copy is optional.
+  }
+
+  const plan = planId ? loadLocalPlans().find((item) => item.id === planId) : undefined;
+  const stored = plan?.approved_actions?.length ? plan.approved_actions : plan?.data?.actions;
+  if (stored?.length) {
+    return {
+      planId: plan?.id ?? planId,
+      careData: careData ?? plan?.data ?? null,
+      actions: stored,
+    };
+  }
+
+  return null;
 }
 
 export function recoverSessionPlan(): StoredPlan[] {

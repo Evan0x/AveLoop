@@ -88,20 +88,18 @@ export default function UploadPage() {
         data: careData,
       });
 
-      try {
-        const saveRes = await fetch("/api/care-plans", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ notes, data: careData }),
-        });
-        const saved = await saveRes.json();
-        if (saved.id) {
+      void fetch("/api/care-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes, data: careData }),
+      })
+        .then((saveRes) => saveRes.json())
+        .then((saved: { id?: string }) => {
+          if (!saved.id) return;
           replaceLocalPlanId(localId, saved.id);
           sessionStorage.setItem(SESSION_PLAN_ID, saved.id);
-        }
-      } catch {
-        // Keep the in-session flow even if Supabase is not configured yet.
-      }
+        })
+        .catch(() => {});
 
       router.push("/review");
     } catch {

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { Download, Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { SymptomChecker } from "@/components/SymptomChecker";
+import { downloadCarePlanPdf } from "@/lib/care-plan-pdf";
 import type { CareData } from "@/lib/types";
 
 interface SharePayload {
@@ -14,9 +16,24 @@ interface SharePayload {
 }
 
 export default function SharePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-white flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#10B981] border-t-transparent" />
+        </main>
+      }
+    >
+      <SharePageContent />
+    </Suspense>
+  );
+}
+
+function SharePageContent() {
   const params = useParams<{ token: string }>();
   const [share, setShare] = useState<SharePayload | null>(null);
   const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     fetch(`/api/share/${params.token}`)
@@ -53,11 +70,29 @@ export default function SharePage() {
     <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 pb-10">
       <AppHeader title="Shared care plan" />
       <div className="px-4 pt-5 max-w-xl mx-auto space-y-4">
-        <div className="bg-teal-50 border border-teal-200 rounded-2xl px-4 py-3">
-          <p className="text-sm font-semibold text-teal-900">Caregiver view</p>
-          <p className="text-xs text-teal-700 mt-1">
-            Read-only plan from AveLoop. You can help watch warning signs; you cannot approve Fo actions from this link.
-          </p>
+        <div className="bg-teal-50 border border-teal-200 rounded-2xl px-4 py-3 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-teal-900">Caregiver view</p>
+            <p className="text-xs text-teal-700 mt-1">
+              Read-only plan from AveLoop. You can help watch warning signs; you cannot approve Fo actions from this link.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={downloading}
+            onClick={async () => {
+              setDownloading(true);
+              try {
+                await downloadCarePlanPdf(data, share.createdAt);
+              } finally {
+                setDownloading(false);
+              }
+            }}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#24785c] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1a5642] disabled:opacity-60"
+          >
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Download PDF
+          </button>
         </div>
 
         {data.warnings.length > 0 && (

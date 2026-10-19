@@ -27,8 +27,9 @@ export function DeletePlanButton({
     setBusy(true);
     setError("");
     try {
-      await deleteCarePlan(plan);
+      const warning = await deleteCarePlan(plan);
       onDeleted?.();
+      if (warning) window.alert(warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete this care plan.");
       setBusy(false);

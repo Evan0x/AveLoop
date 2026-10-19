@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { SESSION_APPROVED, SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
-import { recoverSessionPlan, type StoredPlan } from "@/lib/local-plans";
+import { recoverSessionPlan, savePendingExecution, type StoredPlan } from "@/lib/local-plans";
 import { SharePlanButton } from "@/components/SharePlanButton";
 import { DeletePlanButton } from "@/components/DeletePlanButton";
 
@@ -46,14 +46,13 @@ export default function HistoryPage() {
   }, []);
 
   function openPlan(plan: StoredPlan) {
+    const actions = plan.approved_actions?.length ? plan.approved_actions : plan.data.actions ?? [];
     sessionStorage.setItem(SESSION_PLAN_ID, plan.id);
     sessionStorage.setItem(SESSION_CARE_DATA, JSON.stringify(plan.data));
     if (plan.status === "done" || plan.status === "executing") {
-      sessionStorage.setItem(
-        SESSION_APPROVED,
-        JSON.stringify(plan.data.actions ?? [])
-      );
-      router.push("/execute");
+      sessionStorage.setItem(SESSION_APPROVED, JSON.stringify(actions));
+      savePendingExecution({ planId: plan.id, careData: plan.data, actions });
+      window.location.assign("/execute");
       return;
     }
     router.push("/review");

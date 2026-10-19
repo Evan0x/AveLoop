@@ -81,8 +81,18 @@ export function prepareActionForFo(action: Action): Action {
   };
 }
 
+const SPOKEN_CLINICS: Array<[RegExp, (typeof CLINIC_OPTIONS)[number]]> = [
+  [/vincennes|indiana/, CLINIC_OPTIONS[1]],
+  [/poplar|montana/, CLINIC_OPTIONS[2]],
+  [/alexandria/, CLINIC_OPTIONS[0]],
+  [/williamsburg|new town/, CLINIC_OPTIONS[3]],
+];
+
 export function clinicFromReply(reply: string): string | undefined {
-  return CLINIC_OPTIONS.find((option) => reply === option || reply.includes(option));
+  const exact = CLINIC_OPTIONS.find((option) => reply === option || reply.includes(option));
+  if (exact) return exact;
+  const text = reply.toLowerCase();
+  return SPOKEN_CLINICS.find(([pattern]) => pattern.test(text))?.[1];
 }
 
 export function classifyFoResponse(response: string): "needs_clarification" | "complete" {

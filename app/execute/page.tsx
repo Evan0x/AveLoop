@@ -5,15 +5,16 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { TimelineRow } from "@/components/Timeline";
 import { AppHeader } from "@/components/AppHeader";
-import { CheckCircle2, RotateCcw, Clock } from "lucide-react";
-import { CLINIC_OPTIONS, type Action } from "@/lib/types";
+import { CheckCircle2, RotateCcw, Clock, Volume2 } from "lucide-react";
+import { clearPendingExecution, loadExecutionInput, updateLocalPlan } from "@/lib/local-plans";
+import { speak, stopSpeaking } from "@/lib/fo-voice";
+import { clinicFromReply } from "@/lib/fo-execute";
 import type { FoResult } from "@/lib/fo-client";
-import { SESSION_APPROVED, SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
-import { updateLocalPlan } from "@/lib/local-plans";
+import { SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
 import { SharePlanButton } from "@/components/SharePlanButton";
 import { DeletePlanButton } from "@/components/DeletePlanButton";
 import { SymptomChecker } from "@/components/SymptomChecker";
-import type { CareData } from "@/lib/types";
+import type { Action, CareData } from "@/lib/types";
 
 interface ActionState extends Action {
   conversationId?: string;
@@ -28,20 +29,23 @@ function ExecutePageContent() {
   const [error, setError] = useState("");
   const [careData, setCareData] = useState<CareData | null>(null);
   const [planId, setPlanId] = useState("");
+  const [hearing, setHearing] = useState(false);
+  const [hearError, setHearError] = useState("");
   const startedRef = useRef(false);
+  const hearRun = useRef(0);
 
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(SESSION_APPROVED);
-      if (!raw) {
+      const loaded = loadExecutionInput();
+      if (!loaded) {
         setError("No approved actions found. Please go back and approve your care plan.");
         return;
       }
-      const data: Action[] = JSON.parse(raw);
-      setActions(data.map((a) => ({ ...a, status: "processing" })));
-      const careRaw = sessionStorage.getItem(SESSION_CARE_DATA);
-      if (careRaw) setCareData(JSON.parse(careRaw) as CareData);
-      setPlanId(sessionStorage.getItem(SESSION_PLAN_ID) ?? "");
+      if (loaded.planId) sessionStorage.setItem(SESSION_PLAN_ID, loaded.planId);
+      if (loaded.careData) sessionStorage.setItem(SESSION_CARE_DATA, JSON.stringify(loaded.careData));
+      setActions(loaded.actions.map((action) => ({ ...action, status: "processing" })));
+      setCareData(loaded.careData);
+      setPlanId(loaded.planId);
     } catch {
       setError("Failed to load actions.");
     }
@@ -153,9 +157,8 @@ function ExecutePageContent() {
     const action = actions.find((a) => a.id === actionId);
     if (!action?.conversationId) return;
 
-    const filledClinic = (CLINIC_OPTIONS as readonly string[]).includes(selectedValue)
-      ? selectedValue
-      : action.filledClinic;
+    const spokenClinic = clinicFromReply(selectedValue);
+    const filledClinic = spokenClinic ?? action.filledClinic;
     const nextAction = { ...action, filledClinic };
 
     setActions((prev) =>
@@ -168,7 +171,7 @@ function ExecutePageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: action.conversationId,
-          replyMessage: selectedValue,
+          replyMessage: spokenClinic ?? selectedValue,
           action: nextAction,
         }),
       });
@@ -201,6 +204,32 @@ function ExecutePageContent() {
 
   const doneCount = actions.filter((a) => a.status === "done").length;
   const elapsedMinutes = Math.max(1, Math.ceil((Date.now() - startTime) / 60000));
+
+  async function hearSummary() {
+    if (hearing) {
+      hearRun.current += 1;
+      stopSpeaking();
+      setHearing(false);
+      setHearError("");
+      return;
+    }
+    const run = ++hearRun.current;
+    const spoken = actions
+      .map((action) => {
+        const message = action.foMessage?.trim();
+        if (!message) return action.label;
+        const sentence = message.split(/(?<=[.!?])\s/)[0] ?? message;
+        return `${action.label}. ${sentence}`;
+      })
+      .filter(Boolean)
+      .join(" ");
+    setHearError("");
+    setHearing(true);
+    const played = await speak((spoken || `${doneCount} actions are done.`).slice(0, 900));
+    if (run !== hearRun.current) return;
+    setHearing(false);
+    if (!played) setHearError("Could not play the summary. Click Hear summary again.");
+  }
 
   if (error) {
     return (
@@ -258,11 +287,21 @@ function ExecutePageContent() {
             <p className="text-sm text-emerald-600 mt-1">
               {doneCount} action{doneCount !== 1 ? "s" : ""} completed in {elapsedMinutes} minute{elapsedMinutes !== 1 ? "s" : ""}
             </p>
+            <Button
+              type="button"
+              onClick={hearSummary}
+              className="w-full mt-4 rounded-xl bg-[#1B9A64] text-white hover:bg-[#157a4f]"
+            >
+              <Volume2 className="w-4 h-4 mr-1.5" />
+              {hearing ? "Preparing voice…" : "Hear summary"}
+            </Button>
+            {hearError && <p className="text-xs text-red-600 mt-2">{hearError}</p>}
             <div className="flex gap-2 mt-4">
               <Button
                 variant="outline"
                 onClick={() => {
                   sessionStorage.clear();
+                  clearPendingExecution();
                   router.push("/");
                 }}
                 className="flex-1 rounded-xl border-emerald-200 text-emerald-700 hover:bg-emerald-50"

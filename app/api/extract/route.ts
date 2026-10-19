@@ -53,6 +53,10 @@ export async function POST(req: NextRequest) {
     if (err instanceof SyntaxError) {
       return NextResponse.json({ error: "Failed to parse AI response. Please try again." }, { status: 500 });
     }
-    return NextResponse.json({ error: "Failed to extract care plan. Please try again." }, { status: 500 });
+    const message = err instanceof Error ? err.message : "";
+    return NextResponse.json(
+      { error: message && message.length < 240 ? message : "Failed to extract care plan. Please try again." },
+      { status: 500 }
+    );
   }
 }
