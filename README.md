@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AveLoop
 
-## Getting Started
+AveLoop turns a hospital discharge note into a care plan, then walks the patient through the next steps. Paste the note or snap a photo, review medications and follow-ups, and send the approved steps on to Fo.
 
-First, run the development server:
+## What you can do
+
+1. **Extract.** Paste a discharge summary, or upload a photo or PDF. AveLoop pulls out medications, follow-ups, warnings, and the actions to take next.
+2. **Review.** Ready steps are separated from ones that still need a date or a clinic. Medication times start at 8am, 12pm, and 6pm. Those boxes stay visible, and changing them is optional.
+3. **Execute.** Approved steps run one at a time. If the clinic is ambiguous, Fo asks which Riverside location to use.
+4. **Keep it.** Signed-in plans are saved so they can be reopened from History. A caregiver can open a read-only share link. The plan can also be downloaded as a PDF.
+5. **Check symptoms.** Red-flag symptoms, such as trouble breathing or a stiff neck, tell the patient to call 911 instead of waiting on the agent.
+6. **Hear it.** Fo's questions and the end-of-plan summary are spoken aloud.
+
+## Run it locally
 
 ```bash
+cd aveloop
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). Sign in, then use **Use sample notes** on the home page to try the Alex Chen sinusitis discharge without typing one.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create `aveloop/.env.local`. Do not commit it.
 
-## Learn More
+```bash
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
 
-To learn more about Next.js, take a look at the following resources:
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_JWT_SECRET=
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Google — extraction, follow-up replies, and speech
+GOOGLE_TTS_API_KEY=
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Optional. Live Fo calendar and email. Without it, steps are confirmed in the app.
+WAJO_TOKEN=
+```
 
-## Deploy on Vercel
+`GOOGLE_API_KEY` or `GEMINI_API_KEY` can be used in place of `GOOGLE_TTS_API_KEY`. `GEMINI_MODEL` overrides the default extraction model (`gemini-3.5-flash-lite`).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Supabase
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+In the Clerk dashboard, activate the Supabase integration and add the Clerk domain under Supabase Authentication. Then run `supabase/schema.sql` in the Supabase SQL editor. That creates `care_plans` and the row-level policies so each person only sees their own plans.
+
+History still works from this browser if Supabase is not set up. Those plans stay in local storage.
+
+### Fo
+
+Set `WAJO_TOKEN` when Fo should create the Google Calendar events and send email through Wajo. The default MCP URL is `https://mcp.api.wajo.ai/fo`. Override it with `WAJO_MCP_URL`.
+
+Without that token, AveLoop uses the Google key to confirm each step in the app. Those replies do not write to Google Calendar.
+
+## Stack
+
+Next.js 16, React 19, Clerk, Supabase, and the Google Gemini API for extraction, follow-up replies, and text-to-speech.
