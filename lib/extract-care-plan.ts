@@ -78,7 +78,7 @@ const CARE_DATA_JSON_SCHEMA = {
         required: ["id", "type", "label", "instruction", "status", "missing", "result"],
         properties: {
           id: { type: "string" },
-          type: { type: "string", enum: ["task", "calendar", "email"] },
+          type: { type: "string", enum: ["task", "calendar", "email", "call"] },
           label: { type: "string" },
           instruction: { type: "string" },
           status: { type: "string", enum: ["ready", "needs_input"] },
@@ -104,7 +104,7 @@ function normalizeCareData(raw: unknown): CareData {
       const item = action as Action;
       return {
         id: item.id || `action_${index + 1}`,
-        type: item.type === "calendar" || item.type === "email" ? item.type : "task",
+        type: item.type === "calendar" || item.type === "email" || item.type === "call" ? item.type : "task",
         label: item.label ?? "",
         instruction: item.instruction ?? "",
         status: item.status === "needs_input" ? "needs_input" : "ready",
@@ -176,7 +176,7 @@ const GEMINI_SCHEMA = {
         required: ["id", "type", "label", "instruction", "status", "missing", "result"],
         properties: {
           id: { type: "string" },
-          type: { type: "string", enum: ["task", "calendar", "email"] },
+          type: { type: "string", enum: ["task", "calendar", "email", "call"] },
           label: { type: "string" },
           instruction: { type: "string" },
           status: { type: "string", enum: ["ready", "needs_input"] },

@@ -168,7 +168,7 @@ export function listen(
     onEnd?: () => void;
     onError?: (message: string) => void;
   },
-  options?: { quiet?: boolean }
+  options?: { quiet?: boolean; continuous?: boolean }
 ) {
   const Ctor = recognitionCtor();
   if (!Ctor) {
@@ -181,7 +181,7 @@ export function listen(
   const recognition = new Ctor();
   recognition.lang = "en-US";
   recognition.interimResults = true;
-  recognition.continuous = false;
+  recognition.continuous = options?.continuous ?? false;
   active = recognition;
 
   recognition.onresult = (event) => {
@@ -214,4 +214,38 @@ export function listen(
   return () => {
     if (active === recognition) recognition.stop();
   };
+}
+
+export function listenForReply(timeoutMs = 15000): Promise<string> {
+  return new Promise((resolve) => {
+    let latest = "";
+    let settled = false;
+    let pause = 0;
+    let cap = 0;
+    let stop = () => {};
+    const finish = (value: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(pause);
+      window.clearTimeout(cap);
+      stop();
+      resolve(value.trim());
+    };
+    stop = listen(
+      {
+        onPartial: (text) => {
+          latest = text;
+        },
+        onFinal: (text) => {
+          latest = text;
+          window.clearTimeout(pause);
+          pause = window.setTimeout(() => finish(latest), 1400);
+        },
+        onEnd: () => finish(latest),
+        onError: () => finish(""),
+      },
+      { continuous: true, quiet: true }
+    );
+    cap = window.setTimeout(() => finish(latest), timeoutMs);
+  });
 }

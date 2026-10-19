@@ -98,6 +98,42 @@ function normalizeRiveraFollowup(data: CareData, actions: Action[]) {
     : `Create one 30-minute Google Calendar event titled "Follow-up with Dr. Rivera". Discharge clinic: Riverside Family Clinic, site not specified. Put the patient's chosen location on the event. Do not email, call, or search the web.`;
 }
 
+function ensureCall(actions: Action[], id: string, label: string, instruction: string) {
+  if (actions.some((action) => action.type === "call" && action.id === id)) return;
+  actions.push({
+    id,
+    type: "call",
+    label,
+    instruction,
+    status: "needs_input",
+    missing: ["phone"],
+  });
+}
+
+function ensureCalls(data: CareData, actions: Action[]) {
+  const text = JSON.stringify({
+    followups: data.followups,
+    actions,
+    care_instructions: data.care_instructions,
+  });
+  if (/pharmac|pick\s?up|prescription/i.test(text)) {
+    ensureCall(
+      actions,
+      "call_pharmacy",
+      "Fo calls the pharmacy",
+      "Call the pharmacy. Say you are Fo calling for the patient, and ask whether the prescriptions are ready for pickup today or tomorrow."
+    );
+  }
+  if ((data.followups ?? []).length > 0 || /follow-?up|dr\.?\s*rivera|clinic/i.test(text)) {
+    ensureCall(
+      actions,
+      "call_clinic",
+      "Fo calls the clinic",
+      "Call the clinic. Say you are Fo calling for the patient to schedule the follow-up. Give the date the patient chose, and ask the person who answers for a time."
+    );
+  }
+}
+
 export function enrichCarePlan(data: CareData): CareData {
   const actions = [...(data.actions ?? [])];
 
@@ -118,6 +154,7 @@ export function enrichCarePlan(data: CareData): CareData {
   });
 
   normalizeRiveraFollowup(data, actions);
+  ensureCalls(data, actions);
 
   for (const action of actions) {
     if (!action.missing?.includes("clinic")) continue;

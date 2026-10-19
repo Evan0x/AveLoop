@@ -6,12 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "./StatusBadge";
 import { SUGGESTED_MEDICATION_TIMES, type Action } from "@/lib/types";
-import { CheckCircle, ChevronDown, ChevronUp, Clock, Calendar, Mail, ClipboardList } from "lucide-react";
+import { CheckCircle, ChevronDown, ChevronUp, Clock, Calendar, Mail, ClipboardList, Phone } from "lucide-react";
 
 const TYPE_ICONS = {
   task: ClipboardList,
   calendar: Calendar,
   email: Mail,
+  call: Phone,
 };
 
 interface ActionCardProps {
@@ -27,6 +28,7 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
   const [updatedFields, setUpdatedFields] = useState<Set<string>>(new Set());
 
   const hasOptionalTimes = action.missing.includes("times");
+  const needsPhone = action.missing.includes("phone") || action.type === "call";
   const isReady = action.status === "ready";
   const canExpand = !isReady || hasOptionalTimes;
   const Icon = TYPE_ICONS[action.type];
@@ -74,7 +76,7 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
         </div>
       </CardHeader>
 
-      {(hasOptionalTimes || expanded) && (
+      {(hasOptionalTimes || needsPhone || expanded) && (
         <CardContent className="px-4 py-4 space-y-4 bg-white">
           {hasOptionalTimes && (
             <div>
@@ -99,6 +101,24 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-1">Using 8am, 12pm, and 6pm unless you change them.</p>
+            </div>
+          )}
+
+          {needsPhone && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Phone className="w-4 h-4 text-orange-500" />
+                <span className="text-sm font-medium text-gray-700">Phone (optional)</span>
+              </div>
+              <Input
+                type="tel"
+                inputMode="tel"
+                placeholder="(555) 010-2030"
+                value={action.filledPhone ?? ""}
+                onChange={(e) => onUpdate(action.id, { filledPhone: e.target.value })}
+                className="text-sm h-9"
+              />
+              <p className="text-xs text-gray-400 mt-1">Leave this blank to skip the call. If you add a number, Fo calls it, listens, and shows the keywords.</p>
             </div>
           )}
 

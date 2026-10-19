@@ -25,12 +25,14 @@ import {
   Mail,
   ClipboardList,
   Mic,
+  Phone,
 } from "lucide-react";
 
 const TYPE_ICONS = {
   task: ClipboardList,
   calendar: Calendar,
   email: Mail,
+  call: Phone,
 };
 
 interface TimelineRowProps {
@@ -178,14 +180,14 @@ export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) 
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-800 truncate">{action.label}</p>
-          {action.status === "done" && foMessage && (
+          {action.status === "done" && foMessage && action.type !== "call" && (
             <p className="text-xs text-emerald-600 mt-0.5 line-clamp-2">{foMessage}</p>
           )}
           {action.status === "failed" && foMessage && (
             <p className="text-xs text-red-500 mt-0.5">{foMessage}</p>
           )}
           {action.status === "processing" && (
-            <p className="text-xs text-blue-500 mt-0.5">Fo is working on it…</p>
+            <p className="text-xs text-blue-500 mt-0.5">{foMessage || "Fo is working on it…"}</p>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -193,6 +195,25 @@ export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) 
           {statusIcon}
         </div>
       </div>
+
+      {action.type === "call" && action.status === "done" && (
+        <div className="px-4 pb-3">
+          {!!action.callKeywords?.length && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {action.callKeywords.map((word) => (
+                <span key={word} className="text-xs font-medium bg-emerald-100 text-emerald-800 rounded-full px-2 py-0.5">
+                  {word}
+                </span>
+              ))}
+            </div>
+          )}
+          {foMessage && (
+            <p className="text-xs text-gray-600">
+              {action.callKeywords?.length ? `They said: ${foMessage}` : foMessage}
+            </p>
+          )}
+        </div>
+      )}
 
       {action.status === "needs_clarification" && (
         <div className="px-4 pb-4 border-t border-orange-200 pt-3">

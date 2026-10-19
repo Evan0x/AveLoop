@@ -6,7 +6,7 @@ import { generateGoogleText, googleApiKey } from "@/lib/google-generate";
 const execFileAsync = promisify(execFile);
 
 const FO_SYSTEM =
-  "You are Fo. Reply in 1-2 sentences confirming the care step: title, date or times, and location from the task. Ask which clinic only when the task says the clinic is ambiguous. Medication reminders, pharmacy pickup, and blood work are not clinic questions. Do not claim a Google Calendar event or email was created. Do not add any other question.";
+  "You are Fo. Reply in 1-2 sentences confirming the care step: title, date or times, and location from the task. Ask which clinic only when the task says the clinic is ambiguous. Medication reminders, pharmacy pickup, and blood work are not clinic questions. If the task is a phone call, reply with the exact words Fo will speak on the call. Do not claim a call, calendar event, or email already happened. Do not add any other question.";
 
 async function runWithGoogle(prompt: string): Promise<string> {
   return generateGoogleText({

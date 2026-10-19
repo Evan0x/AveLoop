@@ -2,6 +2,8 @@
 
 AveLoop turns a hospital discharge note into a care plan, then walks the patient through the next steps. Paste the note or snap a photo, review medications and follow-ups, and send the approved steps on to Fo.
 
+Live site: [https://aveloop.vercel.app/](https://aveloop.vercel.app/)
+
 ## What you can do
 
 1. **Extract.** Paste a discharge summary, or upload a photo or PDF. AveLoop pulls out medications, follow-ups, warnings, and the actions to take next.
@@ -42,7 +44,9 @@ GOOGLE_TTS_API_KEY=
 WAJO_TOKEN=
 ```
 
-`GOOGLE_API_KEY` or `GEMINI_API_KEY` can be used in place of `GOOGLE_TTS_API_KEY`. `GEMINI_MODEL` overrides the default extraction model (`gemini-3.5-flash-lite`).
+`GOOGLE_GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `GEMINI_API_KEY` can be used in place of `GOOGLE_TTS_API_KEY`. `GEMINI_MODEL` overrides the default extraction model (`gemini-3.5-flash-lite`).
+
+The live app is deployed on Vercel from `main`. Production needs the same variable names in the Vercel project. `GOOGLE_TTS_API_KEY` is the one AveLoop sends first. A free-tier Gemini key is enough. Do not commit `.env.local`.
 
 ### Supabase
 

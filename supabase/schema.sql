@@ -1,8 +1,3 @@
--- AveLoop + Clerk + Supabase
--- 1. Clerk Dashboard → Native Integrations → Supabase → Activate
--- 2. Copy the Clerk domain and add it in Supabase → Authentication → Sign In / Providers → Clerk
--- 3. Run this SQL in Supabase → SQL Editor
-
 create table if not exists public.care_plans (
   id uuid primary key default gen_random_uuid(),
   user_id text not null default (auth.jwt()->>'sub'),

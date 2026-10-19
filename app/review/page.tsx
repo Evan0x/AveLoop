@@ -45,7 +45,7 @@ export default function ReviewPage() {
   function isActionFilled(action: Action): boolean {
     if (action.status === "ready") return true;
     for (const field of action.missing) {
-      if (field === "clinic" || field === "times") continue;
+      if (field === "clinic" || field === "times" || field === "phone") continue;
       if (field === "dates" && !action.filledDate) return false;
     }
     return true;

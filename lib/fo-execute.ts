@@ -1,5 +1,16 @@
 import { CLINIC_OPTIONS, type Action } from "@/lib/types";
 
+export function callScript(action: Action) {
+  const date = action.filledDate ? ` on ${action.filledDate}` : "";
+  if (action.id === "call_pharmacy" || /pharmac/i.test(action.label)) {
+    return "Hello, this is Fo calling for the patient. Are the prescriptions ready for pickup today or tomorrow?";
+  }
+  if (action.id === "call_clinic" || /clinic/i.test(action.label)) {
+    return `Hello, this is Fo calling for the patient to schedule the follow-up${date}. What times are available?`;
+  }
+  return action.instruction;
+}
+
 export function buildFoPrompt(action: Action): string {
   const extras: string[] = [];
   const times = action.filledTimes?.some(Boolean)
@@ -12,8 +23,10 @@ export function buildFoPrompt(action: Action): string {
     extras.push(`Appointment date: ${action.filledDate}. Use this date. Do not ask for another date.`);
   }
   if (action.filledClinic) extras.push(`Chosen clinic: ${action.filledClinic}`);
+  if (action.filledPhone) extras.push(`Phone number to call: ${action.filledPhone}`);
 
   const needsClinic = action.missing?.includes("clinic") && !action.filledClinic;
+  const placingCall = action.type === "call" && Boolean(action.filledPhone) && !needsClinic;
   const clinicAsk = needsClinic
     ? `\nThe clinic is ambiguous. Ask which one, and do not create an event until they answer. List only:\n- ${CLINIC_OPTIONS.join("\n- ")}`
     : action.filledClinic
@@ -22,15 +35,21 @@ export function buildFoPrompt(action: Action): string {
 
   const toolHint = needsClinic
     ? "Ask one short question so the patient can pick a clinic. Do not email, call, or search for the clinic."
-    : action.type === "calendar"
-      ? "Use Google Calendar. Create the event now. Do not email, call, or search the web."
-      : action.type === "email"
-        ? "Use Gmail. Draft and send if authorized; otherwise ask to connect Gmail."
-        : "Use Calendar, Gmail, or web tools if they help complete the task.";
+    : placingCall
+      ? `Call ${action.filledPhone} now. When a person answers, speak aloud as Fo. Introduce yourself as Fo calling for the patient, then say the message below. Do not email or search the web.`
+      : action.type === "calendar"
+        ? "Use Google Calendar. Create the event now. Do not email, call, or search the web."
+        : action.type === "email"
+          ? "Use Gmail. Draft and send if authorized; otherwise ask to connect Gmail."
+          : "Use Calendar, Gmail, or web tools if they help complete the task.";
 
   const closing = needsClinic
     ? "Ask which clinic in one short question. Do not book anything in this reply."
-    : `If a Google/Gmail connector needs authorization, say so clearly and ask the user to reply "connected" after they authorize.
+    : placingCall
+      ? process.env.WAJO_TOKEN
+        ? "Place the call now. Reply in 1-2 sentences with who answered and what they said. Do not ask a question."
+        : "Write the exact 2 sentences Fo will speak on the call. Do not say the call already connected."
+      : `If a Google/Gmail connector needs authorization, say so clearly and ask the user to reply "connected" after they authorize.
 If you completed the task, reply in 1-2 sentences with the event title, date, and location. Do not ask whether to proceed.`;
 
   return `You are Fo, executing one patient care-plan action.

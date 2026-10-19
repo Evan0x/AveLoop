@@ -13,7 +13,7 @@ export interface Followup {
 
 export interface Action {
   id: string;
-  type: "task" | "calendar" | "email";
+  type: "task" | "calendar" | "email" | "call";
   label: string;
   instruction: string;
   status: "ready" | "needs_input" | "processing" | "done" | "needs_clarification" | "failed";
@@ -23,6 +23,8 @@ export interface Action {
   filledTimes?: string[];
   filledDate?: string;
   filledClinic?: string;
+  filledPhone?: string;
+  callKeywords?: string[];
 }
 
 export interface CareData {

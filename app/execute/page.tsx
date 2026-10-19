@@ -7,8 +7,8 @@ import { TimelineRow } from "@/components/Timeline";
 import { AppHeader } from "@/components/AppHeader";
 import { CheckCircle2, RotateCcw, Clock, Volume2 } from "lucide-react";
 import { clearPendingExecution, loadExecutionInput, updateLocalPlan } from "@/lib/local-plans";
-import { speak, stopSpeaking } from "@/lib/fo-voice";
-import { clinicFromReply } from "@/lib/fo-execute";
+import { listenForReply, speak, stopSpeaking } from "@/lib/fo-voice";
+import { callScript, clinicFromReply } from "@/lib/fo-execute";
 import type { FoResult } from "@/lib/fo-client";
 import { SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
 import { SharePlanButton } from "@/components/SharePlanButton";
@@ -19,6 +19,14 @@ import type { Action, CareData } from "@/lib/types";
 interface ActionState extends Action {
   conversationId?: string;
   foMessage?: string;
+}
+
+function echoesScript(heard: string, script: string) {
+  const clean = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  const reply = clean(heard);
+  const prompt = clean(script);
+  if (reply.length < 12) return false;
+  return prompt.includes(reply) || reply.includes(prompt.slice(0, 48));
 }
 
 function ExecutePageContent() {
@@ -32,6 +40,7 @@ function ExecutePageContent() {
   const [hearing, setHearing] = useState(false);
   const [hearError, setHearError] = useState("");
   const startedRef = useRef(false);
+  const callsStarted = useRef(false);
   const hearRun = useRef(0);
 
   useEffect(() => {
@@ -56,11 +65,107 @@ function ExecutePageContent() {
     if (actions.length === 0 || startedRef.current) return;
     startedRef.current = true;
 
-    actions.forEach((action, idx) => {
-      // Stagger requests so they don't all fire at once
-      setTimeout(() => executeAction(action.id), idx * 600);
-    });
+    actions
+      .filter((action) => action.type !== "call")
+      .forEach((action, idx) => {
+        setTimeout(() => executeAction(action.id), idx * 600);
+      });
   }, [actions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!startedRef.current || callsStarted.current || actions.length === 0) return;
+    const othersPending = actions.some(
+      (action) => action.type !== "call" && (action.status === "processing" || action.status === "ready")
+    );
+    if (othersPending) return;
+    const calls = actions.filter((action) => action.type === "call");
+    if (calls.length === 0) return;
+    callsStarted.current = true;
+    void (async () => {
+      for (const action of calls) {
+        await placeCall(action);
+      }
+    })();
+  }, [actions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function placeCall(action: ActionState) {
+    const phone = action.filledPhone?.replace(/[^\d+]/g, "") ?? "";
+    if (!phone) {
+      setActions((prev) =>
+        prev.map((item) =>
+          item.id === action.id
+            ? { ...item, status: "done", foMessage: "No phone number, so Fo did not call.", callKeywords: [] }
+            : item
+        )
+      );
+      return;
+    }
+
+    const script = callScript(action);
+    const dialKey = `aveloop_dialed_${action.id}_${phone}`;
+    if (sessionStorage.getItem(dialKey)) {
+      setActions((prev) =>
+        prev.map((item) =>
+          item.id === action.id
+            ? {
+                ...item,
+                status: "done",
+                foMessage: "The Mac could not place this call. Check Calls from iPhone, then use a number that is not this iPhone.",
+                callKeywords: [],
+              }
+            : item
+        )
+      );
+      return;
+    }
+    sessionStorage.setItem(dialKey, "1");
+    setActions((prev) =>
+      prev.map((item) =>
+        item.id === action.id
+          ? { ...item, status: "processing", foMessage: `Calling ${action.filledPhone}. Leave this page open and use speakerphone so Fo can hear the reply.` }
+          : item
+      )
+    );
+    const link = document.createElement("a");
+    link.href = `tel:${phone}`;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    await speak(script);
+    const heard = await listenForReply();
+    const transcript = echoesScript(heard, script) ? "" : heard;
+    if (!transcript) {
+      setActions((prev) =>
+        prev.map((item) =>
+          item.id === action.id
+            ? { ...item, status: "done", foMessage: "Fo called, but did not catch a reply.", callKeywords: [] }
+            : item
+        )
+      );
+      return;
+    }
+
+    let keywords: string[] = [];
+    try {
+      const res = await fetch("/api/call-keywords", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript, purpose: action.label }),
+      });
+      const data = (await res.json()) as { keywords?: string[] };
+      keywords = Array.isArray(data.keywords) ? data.keywords : [];
+    } catch {
+      keywords = [];
+    }
+    setActions((prev) =>
+      prev.map((item) =>
+        item.id === action.id
+          ? { ...item, status: "done", foMessage: transcript, result: transcript, callKeywords: keywords }
+          : item
+      )
+    );
+  }
 
   async function executeAction(actionId: string) {
     const action = actions.find((a) => a.id === actionId);
