@@ -5,6 +5,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "./StatusBadge";
+import { shouldOfferClinicChoices } from "@/lib/fo-execute";
 import { CLINIC_OPTIONS, type Action } from "@/lib/types";
 import {
   CheckCircle,
@@ -60,12 +61,10 @@ export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) 
       ? "border-red-200"
       : "border-gray-200";
 
-  // Detect if Fo is presenting clinic options vs a generic question
   const isClinicQuestion =
     action.status === "needs_clarification" &&
-    (foMessage?.toLowerCase().includes("clinic") ||
-      foMessage?.toLowerCase().includes("riverside") ||
-      action.missing?.includes("clinic"));
+    !action.filledClinic &&
+    shouldOfferClinicChoices(foMessage, action.missing?.includes("clinic") ?? false);
 
   return (
     <div
@@ -121,18 +120,23 @@ export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) 
 
           {isClinicQuestion ? (
             <>
-              <RadioGroup onValueChange={setSelectedClinic} className="space-y-2 mb-3">
-                {CLINIC_OPTIONS.map((option) => (
-                  <div key={option} className="flex items-start gap-2">
-                    <RadioGroupItem value={option} id={`clarify-${option}`} className="mt-0.5" />
-                    <Label
-                      htmlFor={`clarify-${option}`}
-                      className="text-sm text-gray-700 leading-tight cursor-pointer"
-                    >
-                      {option}
-                    </Label>
-                  </div>
-                ))}
+              <RadioGroup
+                value={selectedClinic}
+                onValueChange={setSelectedClinic}
+                name={`clinic-${action.id}`}
+                className="space-y-2 mb-3"
+              >
+                {CLINIC_OPTIONS.map((option, index) => {
+                  const optionId = `clinic-${action.id}-${index}`;
+                  return (
+                    <div key={option} className="flex items-start gap-2">
+                      <RadioGroupItem value={option} id={optionId} className="mt-0.5" />
+                      <Label htmlFor={optionId} className="text-sm text-gray-700 leading-tight cursor-pointer">
+                        {option}
+                      </Label>
+                    </div>
+                  );
+                })}
               </RadioGroup>
               <Button
                 size="sm"

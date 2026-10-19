@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "./StatusBadge";
-import type { Action } from "@/lib/types";
+import { SUGGESTED_MEDICATION_TIMES, type Action } from "@/lib/types";
 import { CheckCircle, ChevronDown, ChevronUp, Clock, Calendar, Mail, ClipboardList } from "lucide-react";
 
 const TYPE_ICONS = {
@@ -20,13 +20,15 @@ interface ActionCardProps {
 }
 
 const TIME_LABELS = ["Morning", "Afternoon", "Evening"];
-const TIME_SUGGESTIONS = ["08:00", "12:00", "18:00"];
+const TIME_SUGGESTIONS = [...SUGGESTED_MEDICATION_TIMES];
 
 export function ActionCard({ action, onUpdate }: ActionCardProps) {
   const [expanded, setExpanded] = useState(action.status === "needs_input");
   const [updatedFields, setUpdatedFields] = useState<Set<string>>(new Set());
 
+  const hasOptionalTimes = action.missing.includes("times");
   const isReady = action.status === "ready";
+  const canExpand = !isReady || hasOptionalTimes;
   const Icon = TYPE_ICONS[action.type];
 
   function markUpdated(field: string) {
@@ -52,7 +54,7 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
     <Card className={`rounded-xl shadow-sm border ${borderColor} overflow-hidden`}>
       <CardHeader
         className={`${headerBg} py-3 px-4 cursor-pointer select-none`}
-        onClick={() => !isReady && setExpanded((e) => !e)}
+        onClick={() => canExpand && setExpanded((open) => !open)}
       >
         <div className="flex items-center gap-3">
           <div className={`p-1.5 rounded-lg ${isReady ? "bg-emerald-100" : "bg-orange-100"}`}>
@@ -64,7 +66,7 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <StatusBadge status={action.status} />
-            {!isReady && (
+            {canExpand && (
               expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />
             )}
             {isReady && <CheckCircle className="w-5 h-5 text-emerald-500" />}
@@ -72,13 +74,13 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
         </div>
       </CardHeader>
 
-      {!isReady && expanded && (
+      {(hasOptionalTimes || expanded) && (
         <CardContent className="px-4 py-4 space-y-4 bg-white">
-          {action.missing.includes("times") && (
+          {hasOptionalTimes && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Clock className="w-4 h-4 text-orange-500" />
-                <span className="text-sm font-medium text-gray-700">Set medication times</span>
+                <span className="text-sm font-medium text-gray-700">Times (optional)</span>
                 {updatedFields.has("times") && (
                   <span className="text-xs text-emerald-600 font-medium">✓ Updated</span>
                 )}
@@ -89,18 +91,18 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
                     <Label className="text-xs text-gray-500 mb-1 block">{label}</Label>
                     <Input
                       type="time"
-                      defaultValue={TIME_SUGGESTIONS[i]}
+                      value={action.filledTimes?.[i] || TIME_SUGGESTIONS[i]}
                       onChange={(e) => handleTimeChange(i, e.target.value)}
                       className="text-sm h-9"
                     />
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-gray-400 mt-1">Suggested: 8am / 12pm / 6pm</p>
+              <p className="text-xs text-gray-400 mt-1">Using 8am, 12pm, and 6pm unless you change them.</p>
             </div>
           )}
 
-          {action.missing.includes("dates") && (
+          {expanded && action.missing.includes("dates") && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4 text-orange-500" />
@@ -118,7 +120,7 @@ export function ActionCard({ action, onUpdate }: ActionCardProps) {
             </div>
           )}
 
-          {action.missing.includes("clinic") && (
+          {expanded && !isReady && action.missing.includes("clinic") && (
             <div className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
               <p className="text-sm font-medium text-orange-800">Fo will ask which clinic</p>
               <p className="text-xs text-orange-700 mt-1">

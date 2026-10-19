@@ -38,6 +38,20 @@ export interface ApprovedAction extends Action {
   status: "ready" | "needs_input" | "processing" | "done" | "needs_clarification" | "failed";
 }
 
+export const SUGGESTED_MEDICATION_TIMES = ["08:00", "12:00", "18:00"] as const;
+
+export function withSuggestedTimes(action: Action): Action {
+  if (!action.missing?.includes("times")) return action;
+  const filledTimes = action.filledTimes?.some(Boolean)
+    ? action.filledTimes
+    : [...SUGGESTED_MEDICATION_TIMES];
+  return {
+    ...action,
+    filledTimes,
+    status: "needs_input",
+  };
+}
+
 export const CLINIC_OPTIONS = [
   "Riverside Mental Health and Medical Clinic — Alexandria, VA",
   "Riverside Family Clinic — Vincennes, IN (~650 mi)",

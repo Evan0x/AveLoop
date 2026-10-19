@@ -21,7 +21,7 @@ export async function GET() {
   const supabase = createServerSupabaseClient();
   const { data, error: dbError } = await supabase
     .from("care_plans")
-    .select("id, status, created_at, updated_at, data, notes")
+    .select("id, status, created_at, updated_at, data, notes, approved_actions")
     .order("created_at", { ascending: false });
 
   if (dbError) {

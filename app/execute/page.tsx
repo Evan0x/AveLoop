@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { TimelineRow } from "@/components/Timeline";
 import { AppHeader } from "@/components/AppHeader";
 import { CheckCircle2, RotateCcw, Clock } from "lucide-react";
-import type { Action } from "@/lib/types";
+import { CLINIC_OPTIONS, type Action } from "@/lib/types";
 import type { FoResult } from "@/lib/fo-client";
 import { SESSION_APPROVED, SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
 import { updateLocalPlan } from "@/lib/local-plans";
 import { SharePlanButton } from "@/components/SharePlanButton";
+import { DeletePlanButton } from "@/components/DeletePlanButton";
 import { SymptomChecker } from "@/components/SymptomChecker";
 import type { CareData } from "@/lib/types";
 
@@ -26,6 +27,7 @@ function ExecutePageContent() {
   const [allDone, setAllDone] = useState(false);
   const [error, setError] = useState("");
   const [careData, setCareData] = useState<CareData | null>(null);
+  const [planId, setPlanId] = useState("");
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -39,6 +41,7 @@ function ExecutePageContent() {
       setActions(data.map((a) => ({ ...a, status: "processing" })));
       const careRaw = sessionStorage.getItem(SESSION_CARE_DATA);
       if (careRaw) setCareData(JSON.parse(careRaw) as CareData);
+      setPlanId(sessionStorage.getItem(SESSION_PLAN_ID) ?? "");
     } catch {
       setError("Failed to load actions.");
     }
@@ -150,7 +153,14 @@ function ExecutePageContent() {
     const action = actions.find((a) => a.id === actionId);
     if (!action?.conversationId) return;
 
-    setActions((prev) => prev.map((a) => (a.id === actionId ? { ...a, status: "processing" } : a)));
+    const filledClinic = (CLINIC_OPTIONS as readonly string[]).includes(selectedValue)
+      ? selectedValue
+      : action.filledClinic;
+    const nextAction = { ...action, filledClinic };
+
+    setActions((prev) =>
+      prev.map((a) => (a.id === actionId ? { ...a, status: "processing", filledClinic } : a))
+    );
 
     try {
       const res = await fetch("/api/fo", {
@@ -159,6 +169,7 @@ function ExecutePageContent() {
         body: JSON.stringify({
           conversationId: action.conversationId,
           replyMessage: selectedValue,
+          action: nextAction,
         }),
       });
       const foReply: FoResult = await res.json();
@@ -208,6 +219,19 @@ function ExecutePageContent() {
       <div className="px-4 pt-4 max-w-xl mx-auto w-full flex flex-wrap gap-2 relative z-10">
         <SymptomChecker />
         {careData && <SharePlanButton data={careData} status="executing" approved={actions} />}
+        {planId && careData && (
+          <DeletePlanButton
+            plan={{
+              id: planId,
+              status: allDone ? "done" : "executing",
+              created_at: new Date().toISOString(),
+              notes: null,
+              data: careData,
+              approved_actions: actions,
+            }}
+            onDeleted={() => router.push("/history")}
+          />
+        )}
       </div>
       {!allDone && (
         <div className="px-4 pt-2 max-w-xl mx-auto w-full flex items-center gap-1 text-xs text-gray-400">

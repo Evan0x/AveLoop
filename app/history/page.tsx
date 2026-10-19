@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SESSION_APPROVED, SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
 import { recoverSessionPlan, type StoredPlan } from "@/lib/local-plans";
 import { SharePlanButton } from "@/components/SharePlanButton";
+import { DeletePlanButton } from "@/components/DeletePlanButton";
 
 export default function HistoryPage() {
   const router = useRouter();
@@ -60,7 +61,7 @@ export default function HistoryPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50">
-      <AppHeader title="History" />
+      <AppHeader />
       <div className="px-4 pt-6 max-w-xl mx-auto w-full pb-10">
         <h1 className="text-xl font-bold text-gray-900 mb-4">Your care plans</h1>
         {loading && <p className="text-sm text-gray-500">Loading…</p>}
@@ -98,8 +99,12 @@ export default function HistoryPage() {
                     {actionCount !== 1 ? "s" : ""}
                   </p>
                 </button>
-                <div className="mt-3">
-                  <SharePlanButton data={plan.data} status={plan.status} notes={plan.notes} />
+                <div className="mt-3 flex flex-wrap items-start gap-2">
+                  <SharePlanButton data={plan.data} status={plan.status} notes={plan.notes} approved={plan.approved_actions} />
+                  <DeletePlanButton
+                    plan={plan}
+                    onDeleted={() => setPlans((prev) => prev.filter((item) => item.id !== plan.id))}
+                  />
                 </div>
               </div>
             );

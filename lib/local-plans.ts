@@ -44,6 +44,10 @@ export function updateLocalPlan(id: string, updates: Partial<StoredPlan>) {
   persist(plans);
 }
 
+export function deleteLocalPlan(id: string) {
+  persist(loadLocalPlans().filter((plan) => plan.id !== id));
+}
+
 export function replaceLocalPlanId(oldId: string, newId: string) {
   if (!oldId || oldId === newId) return;
   const plans = loadLocalPlans();

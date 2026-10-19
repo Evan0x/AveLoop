@@ -6,16 +6,18 @@ import { Button } from "@/components/ui/button";
 import { ActionCard } from "@/components/ActionCard";
 import { AppHeader } from "@/components/AppHeader";
 import { Send } from "lucide-react";
-import type { Action, CareData } from "@/lib/types";
+import { withSuggestedTimes, type Action, type CareData } from "@/lib/types";
 import { SESSION_APPROVED, SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
 import { updateLocalPlan } from "@/lib/local-plans";
 import { SharePlanButton } from "@/components/SharePlanButton";
+import { DeletePlanButton } from "@/components/DeletePlanButton";
 import { SymptomChecker } from "@/components/SymptomChecker";
 
 export default function ReviewPage() {
   const router = useRouter();
   const [careData, setCareData] = useState<CareData | null>(null);
   const [actions, setActions] = useState<Action[]>([]);
+  const [planId, setPlanId] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -27,7 +29,8 @@ export default function ReviewPage() {
       }
       const data: CareData = JSON.parse(raw);
       setCareData(data);
-      setActions(data.actions ?? []);
+      setActions((data.actions ?? []).map(withSuggestedTimes));
+      setPlanId(sessionStorage.getItem(SESSION_PLAN_ID) ?? "");
     } catch {
       setError("Failed to load care data. Please try again.");
     }
@@ -42,8 +45,7 @@ export default function ReviewPage() {
   function isActionFilled(action: Action): boolean {
     if (action.status === "ready") return true;
     for (const field of action.missing) {
-      if (field === "clinic") continue;
-      if (field === "times" && (!action.filledTimes || action.filledTimes.some((t) => !t))) return false;
+      if (field === "clinic" || field === "times") continue;
       if (field === "dates" && !action.filledDate) return false;
     }
     return true;
@@ -57,7 +59,7 @@ export default function ReviewPage() {
   async function handleApprove() {
     if (!careData) return;
     const approved = actions.map((a) => ({
-      ...a,
+      ...withSuggestedTimes(a),
       status: "processing" as Action["status"],
     }));
     sessionStorage.setItem(SESSION_APPROVED, JSON.stringify(approved));
@@ -110,8 +112,21 @@ export default function ReviewPage() {
 
       <div className="px-4 pt-5 max-w-xl mx-auto space-y-6">
         {/* Summary pills */}
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
           <SharePlanButton data={{ ...careData, actions }} status="extracted" />
+          {planId && (
+            <DeletePlanButton
+              plan={{
+                id: planId,
+                status: "extracted",
+                created_at: new Date().toISOString(),
+                notes: null,
+                data: { ...careData, actions },
+                approved_actions: actions,
+              }}
+              onDeleted={() => router.push("/history")}
+            />
+          )}
         </div>
 
         {careData.warnings.length > 0 && (

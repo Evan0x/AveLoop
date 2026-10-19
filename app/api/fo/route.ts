@@ -4,7 +4,7 @@ import { promisify } from "util";
 import type { Action } from "@/lib/types";
 import { requireUserId } from "@/lib/auth";
 import { askFo, getFoReply, pollUntilDone, type FoResult } from "@/lib/fo-client";
-import { buildFoPrompt, classifyFoResponse } from "@/lib/fo-execute";
+import { buildFoPrompt, classifyFoResponse, clinicFromReply, prepareActionForFo } from "@/lib/fo-execute";
 
 const execFileAsync = promisify(execFile);
 
@@ -61,12 +61,23 @@ export async function POST(req: NextRequest) {
     let prompt: string;
     let convId = conversationId ?? crypto.randomUUID();
 
-    if (replyMessage && conversationId) {
-      const history = conversations.get(conversationId) ?? "";
-      prompt = `${history}\n\nUser reply: ${replyMessage}\n\nContinue and finish the task if you can. One or two sentences.`;
+    if (replyMessage && (conversationId || action)) {
+      const history = conversationId ? (conversations.get(conversationId) ?? "") : "";
+      const chosen = clinicFromReply(replyMessage);
+      const resumed = action
+        ? buildFoPrompt(prepareActionForFo({ ...action, filledClinic: chosen ?? action.filledClinic }))
+        : "";
+      prompt = [
+        resumed || history,
+        `The patient replied: ${replyMessage}`,
+        chosen ? `Chosen clinic: ${chosen}. Create the calendar event now.` : "",
+        "Finish the task with this answer. Do not ask another question. Reply in 1-2 sentences with the event title, date, and location.",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
     } else if (action) {
       convId = crypto.randomUUID();
-      prompt = buildFoPrompt(action);
+      prompt = buildFoPrompt(prepareActionForFo(action));
     } else {
       return NextResponse.json({ error: "Missing action or replyMessage" }, { status: 400 });
     }
