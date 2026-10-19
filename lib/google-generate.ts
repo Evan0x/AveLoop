@@ -1,5 +1,13 @@
+function cleanKey(value: string | undefined) {
+  return (value ?? "").trim().replace(/^['"]|['"]$/g, "");
+}
+
 export function googleApiKey() {
-  return process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_TTS_API_KEY || "";
+  return (
+    cleanKey(process.env.GOOGLE_API_KEY) ||
+    cleanKey(process.env.GEMINI_API_KEY) ||
+    cleanKey(process.env.GOOGLE_TTS_API_KEY)
+  );
 }
 
 function thinkingLevelFor(model: string) {
@@ -18,6 +26,21 @@ type InteractionBody = {
     content?: Array<{ type?: string; text?: string }>;
   }>;
 };
+
+function failureMessage(status: number, body: unknown, raw: string) {
+  const entries = Array.isArray(body) ? body : [body];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as { error?: { message?: string } | string; message?: string };
+    if (typeof record.error === "string" && record.error.trim()) return record.error.trim().slice(0, 240);
+    if (record.error && typeof record.error === "object" && record.error.message) {
+      return record.error.message.trim().slice(0, 240);
+    }
+    if (typeof record.message === "string" && record.message.trim()) return record.message.trim().slice(0, 240);
+  }
+  const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 180);
+  return snippet || `Google request failed (${status}).`;
+}
 
 function textFrom(body: InteractionBody) {
   if (body.output_text?.trim()) return body.output_text.trim();
@@ -75,14 +98,20 @@ export async function generateGoogleText(options: {
 
   for (const model of models) {
     const response = await requestInteraction(model, options);
-    const body = (await response.json().catch(() => null)) as InteractionBody | null;
+    const raw = await response.text();
+    let body: unknown = null;
+    try {
+      body = raw ? JSON.parse(raw) : null;
+    } catch {
+      body = null;
+    }
     if (response.ok) {
-      const text = body ? textFrom(body) : "";
+      const text = body && !Array.isArray(body) ? textFrom(body as InteractionBody) : "";
       if (text) return text;
       failure = "Google returned an empty reply.";
       break;
     }
-    if (body?.error?.message) failure = body.error.message.slice(0, 240);
+    failure = failureMessage(response.status, body, raw);
     if (response.status !== 404 || process.env.GEMINI_MODEL) break;
   }
 

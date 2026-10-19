@@ -25,7 +25,9 @@ export async function POST(req: NextRequest) {
   const { error } = await requireUserId();
   if (error) return error;
 
-  const key = process.env.GOOGLE_TTS_API_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+  const key = [process.env.GOOGLE_TTS_API_KEY, process.env.GOOGLE_API_KEY, process.env.GEMINI_API_KEY]
+    .map((value) => (value ?? "").trim().replace(/^['"]|['"]$/g, ""))
+    .find(Boolean);
   if (!key) {
     return NextResponse.json({ error: "Text-to-speech is not configured." }, { status: 503 });
   }
