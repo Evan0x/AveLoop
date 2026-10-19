@@ -245,7 +245,12 @@ export function TimelineRow({ action, foMessage, onClarify }: TimelineRowProps) 
                 <Button
                   size="sm"
                   disabled={!selectedClinic}
-                  onClick={() => onClarify(action.id, selectedClinic)}
+                  onClick={() => {
+                    stopSpeaking();
+                    stopListening();
+                    setListening(false);
+                    onClarify(action.id, selectedClinic);
+                  }}
                   className="bg-[#10B981] hover:bg-[#059669] text-white"
                 >
                   Confirm selection

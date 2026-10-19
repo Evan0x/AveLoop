@@ -259,6 +259,7 @@ function ExecutePageContent() {
   }
 
   async function handleClarify(actionId: string, selectedValue: string) {
+    stopSpeaking();
     const action = actions.find((a) => a.id === actionId);
     if (!action?.conversationId) return;
 
