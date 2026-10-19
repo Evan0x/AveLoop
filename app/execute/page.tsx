@@ -7,7 +7,7 @@ import { TimelineRow } from "@/components/Timeline";
 import { AppHeader } from "@/components/AppHeader";
 import { CheckCircle2, RotateCcw, Clock, Volume2 } from "lucide-react";
 import { clearPendingExecution, loadExecutionInput, updateLocalPlan } from "@/lib/local-plans";
-import { listenForReply, speak, stopSpeaking } from "@/lib/fo-voice";
+import { listenForReply, speak, speechFailure, stopSpeaking } from "@/lib/fo-voice";
 import { callScript, clinicFromReply } from "@/lib/fo-execute";
 import type { FoResult } from "@/lib/fo-client";
 import { SESSION_CARE_DATA, SESSION_PLAN_ID } from "@/lib/session-keys";
@@ -333,7 +333,7 @@ function ExecutePageContent() {
     const played = await speak((spoken || `${doneCount} actions are done.`).slice(0, 900));
     if (run !== hearRun.current) return;
     setHearing(false);
-    if (!played) setHearError("Could not play the summary. Click Hear summary again.");
+    if (!played) setHearError(speechFailure() || "Could not play the summary. Click Hear summary again.");
   }
 
   if (error) {
@@ -398,7 +398,7 @@ function ExecutePageContent() {
               className="w-full mt-4 rounded-xl bg-[#1B9A64] text-white hover:bg-[#157a4f]"
             >
               <Volume2 className="w-4 h-4 mr-1.5" />
-              {hearing ? "Preparing voice…" : "Hear summary"}
+              {hearing ? "Playing summary…" : "Hear summary"}
             </Button>
             {hearError && <p className="text-xs text-red-600 mt-2">{hearError}</p>}
             <div className="flex gap-2 mt-4">

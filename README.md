@@ -7,11 +7,11 @@ Live site: [https://aveloop.vercel.app/](https://aveloop.vercel.app/)
 ## What you can do
 
 1. **Extract.** Paste a discharge summary, or upload a photo or PDF. AveLoop pulls out medications, follow-ups, warnings, and the actions to take next.
-2. **Review.** Ready steps are separated from ones that still need a date or a clinic. Medication times start at 8am, 12pm, and 6pm. Those boxes stay visible, and changing them is optional.
-3. **Execute.** Approved steps run one at a time. If the clinic is ambiguous, Fo asks which Riverside location to use.
+2. **Review.** Ready steps are separated from ones that still need a date or a clinic. Medication times start at 8am, 12pm, and 6pm. Those boxes stay yellow and visible, and changing them is optional. Pharmacy and clinic calls have the same kind of phone box. Leave it blank to skip the call.
+3. **Execute.** Approved steps run one at a time. If the clinic is ambiguous, Fo asks which Riverside location to use. When a phone number is filled in, Fo calls it after the other steps, speaks the follow-up, listens to the reply, and shows the keywords from what that person said.
 4. **Keep it.** Signed-in plans are saved so they can be reopened from History. A caregiver can open a read-only share link. The plan can also be downloaded as a PDF.
 5. **Check symptoms.** Red-flag symptoms, such as trouble breathing or a stiff neck, tell the patient to call 911 instead of waiting on the agent.
-6. **Hear it.** Fo's questions and the end-of-plan summary are spoken aloud.
+6. **Hear it.** Fo's questions, the words Fo speaks on a call, and the end-of-plan summary are spoken aloud with the Google speech API.
 
 ## Run it locally
 
@@ -60,6 +60,14 @@ Set `WAJO_TOKEN` when Fo should create the Google Calendar events and send email
 
 Without that token, AveLoop uses the Google key to confirm each step in the app. Those replies do not write to Google Calendar.
 
+### Calls
+
+A discharge that mentions a pharmacy or a follow-up gets two yellow call steps: one for the pharmacy, one for the clinic. The phone number is optional and does not block **Approve & Send to Fo**.
+
+If you type a number, your phone places the call. On a Mac, that uses Calls from iPhone, so the iPhone and Mac need the same Apple ID, with **Settings → Phone → Calls on Other Devices** and **FaceTime → Settings → Calls from iPhone** turned on. Type the pharmacy or clinic number, or another person's phone. The iPhone that places the call cannot ring itself.
+
+Leave this page open and use speakerphone. Fo listens through the microphone, then lists keywords from the reply, such as "ready tomorrow" or a time. A blank number is skipped.
+
 ## Stack
 
-Next.js 16, React 19, Clerk, Supabase, and the Google Gemini API for extraction, follow-up replies, and text-to-speech.
+Next.js 16, React 19, Clerk, Supabase, and the Google Gemini API for extraction, follow-up replies, call keywords, and text-to-speech.

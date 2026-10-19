@@ -4,22 +4,58 @@ import { googleApiKeys } from "@/lib/google-generate";
 
 export const maxDuration = 30;
 
-const MODELS = ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"];
+const CLOUD_VOICES = ["en-US-Neural2-F", "en-US-Wavenet-F"];
 
-type SpeechBody = {
+type CloudBody = {
+  audioContent?: string;
   error?: { message?: string };
-  steps?: Array<{
-    content?: Array<{ type?: string; data?: string; mime_type?: string }>;
-  }>;
 };
 
-function audioPart(body: SpeechBody) {
-  for (const step of body.steps ?? []) {
-    for (const part of step.content ?? []) {
-      if (part.type === "audio" && part.data) return part;
-    }
+function audioResponse(base64: string, mime: string) {
+  const bytes = Buffer.from(base64, "base64");
+  return new NextResponse(new Uint8Array(bytes), {
+    headers: {
+      "Content-Type": mime,
+      "Content-Length": String(bytes.length),
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function errorMessage(body: unknown, raw: string) {
+  const entries = Array.isArray(body) ? body : [body];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as { error?: { message?: string } | string; message?: string };
+    if (typeof record.error === "string" && record.error.trim()) return record.error.trim();
+    if (record.error && typeof record.error === "object" && record.error.message) return record.error.message.trim();
+    if (typeof record.message === "string" && record.message.trim()) return record.message.trim();
   }
-  return null;
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+async function synthesizeCloud(key: string, text: string, voice: string) {
+  const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": key,
+    },
+    body: JSON.stringify({
+      input: { text },
+      voice: { languageCode: "en-US", name: voice },
+      audioConfig: { audioEncoding: "MP3" },
+    }),
+  });
+  const raw = await response.text();
+  let body: CloudBody | CloudBody[] | null = null;
+  try {
+    body = raw ? (JSON.parse(raw) as CloudBody | CloudBody[]) : null;
+  } catch {
+    body = null;
+  }
+  const audio = body && !Array.isArray(body) ? body.audioContent : undefined;
+  return { ok: response.ok && Boolean(audio), status: response.status, audio, failure: errorMessage(body, raw).slice(0, 180) };
 }
 
 export async function POST(req: NextRequest) {
@@ -39,65 +75,18 @@ export async function POST(req: NextRequest) {
 
   let failure = "Could not synthesize speech.";
   for (const key of keys) {
-    let tryNextKey = false;
-    for (const model of MODELS) {
-      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": key,
-        },
-        body: JSON.stringify({
-          model,
-          input: [
-            {
-              type: "user_input",
-              content: [
-                {
-                  type: "text",
-                  text,
-                  annotations: [{ type: "speech_metadata", style: "calm and clear" }],
-                },
-              ],
-            },
-          ],
-          response_format: { type: "audio" },
-          generation_config: {
-            speech_config: [{ voice: "Aoede" }],
-          },
-        }),
-      });
-
-      const raw = await response.text();
-      let data: SpeechBody | null = null;
-      try {
-        const parsed = raw ? JSON.parse(raw) : null;
-        data = Array.isArray(parsed) ? parsed[0] : parsed;
-      } catch {
-        data = null;
-      }
-      const audio = data ? audioPart(data) : null;
-      if (!response.ok || !audio?.data) {
-        if (data?.error?.message) failure = data.error.message.slice(0, 180);
-        if (/are blocked|api key not valid|permission denied/i.test(failure)) {
-          tryNextKey = true;
-          break;
-        }
-        if (response.status !== 404) break;
-        continue;
-      }
-
-      const bytes = Buffer.from(audio.data, "base64");
-      const mime = audio.mime_type?.startsWith("audio/") ? audio.mime_type : "audio/wav";
-      return new NextResponse(new Uint8Array(bytes), {
-        headers: {
-          "Content-Type": mime,
-          "Content-Length": String(bytes.length),
-          "Cache-Control": "no-store",
-        },
-      });
+    for (const voice of CLOUD_VOICES) {
+      const result = await synthesizeCloud(key, text, voice);
+      if (result.ok && result.audio) return audioResponse(result.audio, "audio/mpeg");
+      failure = result.failure || failure;
+      const blocked =
+        result.status === 401 ||
+        result.status === 403 ||
+        /are blocked|api key not valid|permission denied|expected oauth/i.test(failure);
+      if (blocked) break;
+      if (/does not exist|not supported for this voice|invalid voice/i.test(failure)) continue;
+      if (result.status !== 404) break;
     }
-    if (!tryNextKey) break;
   }
 
   return NextResponse.json({ error: failure }, { status: 502 });

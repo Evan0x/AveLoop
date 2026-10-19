@@ -36,6 +36,7 @@ let speechAbort: AbortController | null = null;
 let audioCtx: AudioContext | null = null;
 let keepAlive: OscillatorNode | null = null;
 let player: HTMLAudioElement | null = null;
+let speechError = "";
 let playerUrl: string | null = null;
 
 const SILENT_WAV =
@@ -121,20 +122,32 @@ function playCloudAudio(bytes: ArrayBuffer, mime: string, token: number): Promis
   const el = audioPlayer();
   if (playerUrl) URL.revokeObjectURL(playerUrl);
   playerUrl = URL.createObjectURL(new Blob([bytes], { type: mime || "audio/wav" }));
-  el.src = playerUrl;
   return new Promise((resolve) => {
     let settled = false;
+    let started = false;
     const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
       resolve(ok && token === speechGeneration);
     };
-    el.onended = () => finish(true);
-    el.onerror = () => finish(false);
+    el.onended = () => {
+      if (started) finish(true);
+    };
+    el.onerror = () => {
+      if (started) finish(false);
+    };
+    el.src = playerUrl;
     el.play()
-      .then(() => stopKeepAlive())
+      .then(() => {
+        started = true;
+        stopKeepAlive();
+      })
       .catch(() => finish(false));
   });
+}
+
+export function speechFailure() {
+  return speechError;
 }
 
 export function speak(text: string): Promise<boolean> {
@@ -143,6 +156,7 @@ export function speak(text: string): Promise<boolean> {
   stopListening();
   stopSpeaking();
   primeSpeech();
+  speechError = "";
   const token = speechGeneration;
   const controller = new AbortController();
   speechAbort = controller;
@@ -154,8 +168,13 @@ export function speak(text: string): Promise<boolean> {
     signal: controller.signal,
   })
     .then(async (response) => {
-      if (token !== speechGeneration || !response.ok) return false;
-      const mime = response.headers.get("content-type") || "audio/wav";
+      if (token !== speechGeneration) return false;
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        speechError = data?.error || "Cloud Text-to-Speech did not return audio.";
+        return false;
+      }
+      const mime = response.headers.get("content-type") || "audio/mpeg";
       return playCloudAudio(await response.arrayBuffer(), mime, token);
     })
     .catch(() => false);
