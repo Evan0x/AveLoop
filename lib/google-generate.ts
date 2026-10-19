@@ -2,7 +2,7 @@ function cleanKey(value: string | undefined) {
   return (value ?? "").trim().replace(/^['"]|['"]$/g, "");
 }
 
-const KEY_NAMES = ["GOOGLE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_TTS_API_KEY"];
+const KEY_NAMES = ["GOOGLE_TTS_API_KEY", "GOOGLE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"];
 
 export function googleApiKeys() {
   const seen = new Set<string>();
@@ -132,7 +132,7 @@ export async function generateGoogleText(options: {
       }
       failure = failureMessage(response.status, body, raw);
       if (keyRejected(failure)) {
-        failure = "Google blocked this API key. In Google Cloud, edit the key and set API restrictions to Unrestricted, then redeploy.";
+        failure = "Google blocked this API key. Paste the free-tier key from .env.local into GOOGLE_TTS_API_KEY on Vercel, then redeploy.";
         tryNextKey = true;
         break;
       }
